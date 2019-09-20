@@ -83,3 +83,22 @@ private [parsley] object Id
         }
     }
 }
+
+object ContTest
+{
+    import ContOps.{ContAdapter, perform, result, safeCall}
+    def factorial[C[_, _]](n: Int)(implicit ops: ContOps[C]): Int =
+    {
+        def fact(n: Int): C[Int, Int] =
+        {
+            if (n == 0) result(1)
+            else for (x <- fact(n-1)) yield x * n
+        }
+        perform(fact(n))
+    }
+
+    def main(args: Array[String]): Unit =
+    {
+        println(safeCall(implicit ops => factorial(100000)))
+    }
+}

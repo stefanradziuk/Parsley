@@ -215,7 +215,7 @@ private [parsley] object ParsleyBench
             Prefixes(tok.operator("--") #> JSDec, tok.operator("++") #> JSInc,
                      tok.operator("-") #> JSNeg, tok.operator("+") #> JSPlus,
                      tok.operator("~") #> JSBitNeg, tok.operator("!") #> JSNot),
-            Postfixes(tok.operator("++") #> JSDec, tok.operator("++") #> JSInc),
+            Postfixes(tok.operator("--") #> JSDec, tok.operator("++") #> JSInc),
             Infixes(AssocLeft, tok.operator("*") #> JSMul, tok.operator("/") #> JSDiv,
                                tok.operator("%") #> JSMod),
             Infixes(AssocLeft, tok.operator("+") #> JSAdd, tok.operator("-") #> JSSub),
@@ -243,8 +243,8 @@ private [parsley] object ParsleyBench
             (tok.semi #> JSSemi
          <|> tok.keyword("if") *> lift3(JSIf, parensExpr, stmt, option(tok.keyword("else") *> stmt))
          <|> tok.keyword("while") *> lift2(JSWhile, parensExpr, stmt)
-         <|> (tok.keyword("for") *> tok.parens(lift2(JSForIn(_, _), varsOrExprs, tok.keyword("in") *> expr)
-                                           <\> lift3(JSFor(_, _, _), option(varsOrExprs) <* tok.semi, optExpr <* tok.semi, optExpr)) <*> stmt)
+         <|> (tok.keyword("for") *> tok.parens(lift2((x: Either[List[JSVar], JSExpr], y: JSExpr) => JSForIn(x, y)(_), varsOrExprs, tok.keyword("in") *> expr)
+                                           <\> lift3((x: Option[Either[List[JSVar], JSExpr]], y: Option[JSExpr], z: Option[JSExpr]) => JSFor(x, y, z)(_), option(varsOrExprs) <* tok.semi, optExpr <* tok.semi, optExpr)) <*> stmt)
          <|> tok.keyword("break") #> JSBreak
          <|> tok.keyword("continue") #> JSContinue
          <|> tok.keyword("with") *> lift2(JSWith, parensExpr, stmt)
@@ -936,13 +936,45 @@ private [parsley] object Benchmark
         //val exec = runParserFastUnsafe _
         //new nandlang.NandLang().run(read("inputs/arrays.nand"))
         //val nand = new nandlang.NandLang
-        val (filename, p, exec, iters) = benchmarks(3)
+        /*val (filename, p, exec, iters) = benchmarks(3)
         val input = read(filename)
         val start = System.currentTimeMillis()
         println(exec(p, input))
         //println(BenchParser.json.parseFull(input))
         //println(PfS.parseJson(input))
         //for (_ <- 0 to iters) exec(p, input)
-        println(System.currentTimeMillis() - start)
+        println(System.currentTimeMillis() - start)*/
+        /*val start = System.currentTimeMillis()
+        val input = "a" * 1000
+        for (_ <- 0 to 100000) runParserFastUnsafe(parsley.Parsley.many(parsley.Char.char('a')), input)
+        println(System.currentTimeMillis() - start)*/
+
+        def when(p: =>Parsley[Boolean], q: =>Parsley[Unit]): Parsley[Unit] =
+        {
+            p >>= ((b: Boolean) => if (b) q else Parsley.unit)
+        }
+
+        def `while`(p: =>Parsley[Boolean]) =
+        {
+            lazy val whilep: Parsley[Unit] = when(p, whilep)
+            whilep
+        }
+
+        val w: Parsley[Unit] = `while`(Char.anyChar.map(_ == 'a').debug("a") <* `while`(Char.anyChar.map(_ == 'b').debug("b")).debug("whileb"))
+        println(runParserFastUnsafe(w, "abbbbbbbcbbbbbbc"))
+
+        sealed trait Pred
+        case class Not(p: Pred) extends Pred
+        case class And(p: Pred, q: Pred) extends Pred
+        case object True extends Pred
+        case object False extends Pred
+
+        import Parsley._
+        import Char._
+        import Combinator._
+        val atom: Parsley[Pred] = ('t' #> True) <|> ('f' #> False)
+        val term: Parsley[Pred] = chainPre(atom, '!' #> Not)
+        val pred: Parsley[Pred] = chainr1(term, "&&" #> And)
+        println(pred.pretty)
     }
 }
