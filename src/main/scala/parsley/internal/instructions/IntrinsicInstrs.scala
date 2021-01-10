@@ -177,41 +177,53 @@ private [internal] class Eof(_expected: UnsafeOption[String]) extends Instr {
     // $COVERAGE-ON$
 }
 
-private [internal] final class Modify[S](v: Int, f: S => S) extends Instr {
+private [internal] final class Modify[S](reg: Int, f: S => S) extends Instr {
     private [this] val g = f.asInstanceOf[Any => Any]
     override def apply(ctx: Context): Unit = {
-        ctx.copyOnWrite(v, g(ctx.regs(v)))
+        ctx.writeReg(reg, g(ctx.regs(reg)))
         ctx.pushAndContinue(())
     }
     // $COVERAGE-OFF$
-    override def toString: String = s"Modify($v, f)"
+    override def toString: String = s"Modify($reg, f)"
     // $COVERAGE-ON$
 }
 
-private [internal] final class LocalEntry(v: Int) extends Instr {
-    override def apply(ctx: Context): Unit = {
-        ctx.saveState()
-        // This will always cause a copy
-        ctx.copyOnWrite(v, ctx.stack.upop())
-        ctx.inc()
+private [internal] final class Local(var label: Int, reg: Int) extends JumpInstr with Stateful {
+    private var saved: AnyRef = _
+    private var inUse = false
+
+    private def save(ctx: Context): Unit = saved = ctx.regs(reg).asInstanceOf[AnyRef]
+
+    private def restore(ctx: Context): Unit = {
+        ctx.regs(reg) = saved
+        saved = null
     }
-    // $COVERAGE-OFF$
-    override def toString: String = s"LocalEntry($v)"
-    // $COVERAGE-ON$
-}
 
-private [internal] final class LocalExit[S](v: Int) extends Instr {
-    override def apply(ctx: Context): Unit = {
-        if (ctx.status eq Good) {
-            ctx.regs(v) = ctx.states.head.regs(v)
-            ctx.inc()
-        }
+    private def continue(ctx: Context): Unit = {
+        if (ctx.status eq Good) ctx.inc()
         else ctx.fail()
-        ctx.states = ctx.states.tail
     }
+
+    override def apply(ctx: Context): Unit = {
+        // Second-entry, restore and either inc or fail
+        if (inUse) {
+            restore(ctx)
+            inUse = false
+            continue(ctx)
+        }
+        // Entry for the first time, register as a handle, and jump
+        else {
+            save(ctx)
+            ctx.writeReg(reg, ctx.stack.upop())
+            inUse = true
+            ctx.pc = label
+        }
+    }
+
     // $COVERAGE-OFF$
-    override def toString: String = s"LocalExit($v)"
+    override def toString: String = s"Local($label, $reg)"
     // $COVERAGE-ON$
+    override def copy: Local = new Local(label, reg)
 }
 
 // Companion Objects

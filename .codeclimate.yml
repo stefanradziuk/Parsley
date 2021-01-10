@@ -1,4 +1,15 @@
 version: "2"
+exclude_patterns:
+- "**/scala-3.x"
+- "**/test"
+- ".github"
+- "project"
+- "build.sbt"
+- "*.md"
+- ".codeclimate.yml"
+- ".gitignore"
+- "*.pdf"
+- "LICENSE"
 plugins:
   scalastyle:
     enabled: true

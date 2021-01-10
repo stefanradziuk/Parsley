@@ -4,7 +4,7 @@ import Stack.{drop, isEmpty, mkString, map, push}
 import parsley.{Failure, Result, Success}
 import parsley.internal.UnsafeOption
 
-import scala.annotation.{tailrec, switch}
+import scala.annotation.tailrec
 
 // Private internals
 private [instructions] final class Frame(val ret: Int, val instrs: Array[Instr]) {
@@ -13,13 +13,12 @@ private [instructions] final class Frame(val ret: Int, val instrs: Array[Instr])
 private [instructions] final class Handler(val depth: Int, val pc: Int, var stacksz: Int) {
     override def toString: String = s"Handler@$depth:$pc(-${stacksz + 1})"
 }
-private [instructions] final class State(val offset: Int, val line: Int, val col: Int, val regs: Array[Any]) {
+private [instructions] final class State(val offset: Int, val line: Int, val col: Int) {
     override def toString: String = s"$offset ($line, $col)"
 }
 
-// TODO: Make this private for 2.0
-final class Context private [parsley] (private [instructions] var instrs: Array[Instr],
-                                       private [instructions] var input: Array[Char]) {
+private [parsley] final class Context(private [instructions] var instrs: Array[Instr],
+                                      private [instructions] var input: Array[Char]) {
     private [instructions] val stack: ArrayStack[Any] = new ArrayStack()
     private [instructions] var offset: Int = 0
     private [instructions] var inputsz: Int = input.length
@@ -41,11 +40,11 @@ final class Context private [parsley] (private [instructions] var instrs: Array[
     private [instructions] var unexpectAnyway: Boolean = false
     private [instructions] var errorOverride: UnsafeOption[String] = _
     private [instructions] var overrideDepth: Int = 0
-    private [instructions] var regs: Array[Any] = new Array[Any](Context.NumRegs)
+    private [instructions] var regs: Array[AnyRef] = new Array[AnyRef](Context.NumRegs)
     private [instructions] var debuglvl: Int = 0
     private [instructions] var startline: Int = 1
     private [instructions] var startcol: Int = 1
-    var sourceName: String = "input"
+    private [parsley] var sourceName: String = "input"
 
     // $COVERAGE-OFF$
     //override def toString: String = pretty
@@ -67,12 +66,12 @@ final class Context private [parsley] (private [instructions] var instrs: Array[
     }
     // $COVERAGE-ON$
 
-    def pos: (Int, Int) = (startline, startcol)
-    def pos_=(pos: (Int, Int)): Unit = {
+    /*private [parsley] def pos: (Int, Int) = (startline, startcol)
+    private [parsley] def pos_=(pos: (Int, Int)): Unit = {
         val (line, col) = pos
         startline = line
         startcol = col
-    }
+    }*/
 
     @tailrec @inline private [parsley] def runParser[A](): Result[A] = {
         //println(this)
@@ -199,7 +198,7 @@ final class Context private [parsley] (private [instructions] var instrs: Array[
     private [instructions] def inc(): Unit = pc += 1
     private [instructions] def nextChar: Char = input(offset)
     private [instructions] def moreInput: Boolean = offset < inputsz
-    private [instructions] def updatePos(c: Char) = (c: @switch) match {
+    private [instructions] def updatePos(c: Char) = c match {
         case '\n' => line += 1; col = 1
         case '\t' => col += 4 - ((col - 1) & 3)
         case _ => col += 1
@@ -216,18 +215,16 @@ final class Context private [parsley] (private [instructions] var instrs: Array[
     }
     private [instructions] def pushHandler(label: Int): Unit = handlers = push(handlers, new Handler(depth, label, stack.usize))
     private [instructions] def pushCheck(): Unit = checkStack = push(checkStack, offset)
-    private [instructions] def saveState(): Unit = states = push(states, new State(offset, line, col, regs))
+    private [instructions] def saveState(): Unit = states = push(states, new State(offset, line, col))
     private [instructions] def restoreState(): Unit = {
         val state = states.head
         states = states.tail
         offset = state.offset
         line = state.line
         col = state.col
-        regs = state.regs
     }
-    private [instructions] def copyOnWrite(v: Int, x: Any): Unit = {
-        if (!isEmpty(states) && (states.head.regs eq regs)) regs = regs.clone
-        regs(v) = x
+    private [instructions] def writeReg(reg: Int, x: Any): Unit = {
+        regs(reg) = x.asInstanceOf[AnyRef]
     }
 
     // Allows us to reuse a context, helpful for benchmarking and potentially user applications
